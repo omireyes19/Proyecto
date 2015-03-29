@@ -524,6 +524,41 @@ labs(title = "Numero de Diagnosticos por Estado",
 
 ```
 
+
+```{r Gráfica9}
+###Dividiremos la poblacion en tres grupos: niños (de 0 a 14 años), adultos (de 25 a 59 años) y viejos (de 60 años en adelante)
+
+suma_nin<-matrix(rep(0,352), nrow=32)
+suma_adu<-matrix(rep(0,352), nrow=32)
+suma_vie<-matrix(rep(0,352), nrow=32)
+for (i in 1:32){
+  for (j in 1:11){
+    suma_nin[i,j]<-sum(subset(totnot, Estado == estados[i] & Año == 2002+j, 5)[1:4,])
+    suma_adu[i,j]<-sum(subset(totnot, Estado == estados[i] & Año == 2002+j, 5)[7:9,])
+    suma_vie[i,j]<-sum(subset(totnot, Estado == estados[i] & Año == 2002+j, 5)[10:11,])
+  }
+}
+
+titulos <- c("Estados", 2003:2013)
+total.niños <- as.data.frame(matrix(c(estados, suma_nin), ncol=12,))
+total.adultos <- as.data.frame(matrix(c(estados, suma_nin), ncol=12,))
+total.viejos <- as.data.frame(matrix(c(estados, suma_nin), ncol=12,))
+names(totales) <- titulos
+Totales <- melt(totales, 1)
+names(Totales) <- c("Estados", "Año", "valor")
+
+###En esta grafica buscaremos analizar el INCREMENTO en cada año de tres estados: el estado con mas numero de casos observados, el DF y el estado con el menor numero de casos. Es evidente que el estado con mas diabeticos fue el Estado de México, y gracias al análisis anterior (pues en la gráfica no era muy claro) pudimos ver que es Colima el que cuenta con el menor número.
+
+totedos <- subset(Totales, Estados == "México" | Estados == "Distrito Federal" | Estados == "Colima")
+
+ggplot(totedos, aes(x=Año, y=valor, group= Estados, colour = Estados)) +
+geom_line() + geom_point() +
+labs(title = "Numero de Diagnosticos por Estado", 
+     x = "Año", 
+     y = "Frecuencia") 
+
+```
+
 #```{r Mapa}
 
 estados.shape <- readShapeSpatial("./DATOS/MEXICO/MEX_adm1.shp")
