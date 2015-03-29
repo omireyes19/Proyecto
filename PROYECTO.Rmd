@@ -1,0 +1,561 @@
+---
+title: "Diabetes en México"
+author: "Omar Reyes Villa, Arturo Resendiz Lira"
+output: html_document
+---
+
+
+```{r Ajustes de Librerias, results="hide"}
+###Caché
+directorio <- "E:/ProyectoEA"
+setwd(directorio)
+knitr::opts_knit$set(root.dir = directorio)
+# Opciones del documento.
+knitr::opts_chunk$set(fig.path = "FIGURAS/Figuras_", fig.align = 'center',
+                      fig.width = 12, fig.height = 8, 
+                      cache.path = "CACHE/Cache_", cache = TRUE, 
+                      eval = TRUE, 
+                      warning = FALSE, message = FALSE,
+                      echo = TRUE, 
+                      comment = NA)
+# Paquetes
+paquetes.utilizados <- c("lubridate","editrules", "dplyr", "maps", "ggmap", "maptools", "car",
+                         "mapproj", "ggplot2", "scales", "plyr", "reshape2","knitr", 
+                         "xtable", "datasets", "tidyr")
+paquetes.instalados <- rownames(installed.packages())
+paquetes.por.instalar <- setdiff(paquetes.utilizados, paquetes.instalados)
+# Instala los paquetes faltantes.
+if (length(paquetes.por.instalar) != 0 ) install.packages(paquetes.por.instalar, 
+                                                          repos = "http://cran.us.r-project.org")
+
+# Carga los paquetes a utilizar.
+lapply(paquetes.utilizados, library, character.only = TRUE)
+
+```
+
+#---------FUENTE-----------
+
+```{r Lectura datos FUENTE}
+###Lecturas de datos FUENTE
+folder.ruta<- "./DATOS/BRUTOS/FUENTE/"
+archivos <- list.files(folder.ruta)
+
+lista.archivos <- list()
+for (archivo in archivos) {
+
+  datos <- read.csv(paste0(folder.ruta, archivo), na.strings = c("N.A.", "S.R.", "S/ R", "S.R"))
+  datos <- datos[-33,-11]
+  lista.archivos[[archivo]] <- datos
+}
+
+FUENTE <- ldply(lista.archivos, data.frame, .progress = "text")
+```
+
+```{r Limpieza de FUENTE}
+###Limpieza de FUENTE
+
+###Cambio el título de columnas
+names(FUENTE)[3:11]<- c( "SSA","IMSS.ORD", "ISSSTE", "IMSS.OP", "DIF", "PEMEX", "SEDENA", "SEDEMAR", "OTRAS")
+
+###Insserto dos nuevas columnas para facilitar la visualización
+FUENTE$Año <- substr(FUENTE$.id, 5, 8)
+FUENTE$Sexo <-substr(FUENTE$.id, 3,3)
+FUENTE$.id <- NULL
+
+str(FUENTE)
+
+sapply(FUENTE, class)
+
+###Estructura de la tabla
+cat("numero de renglones y columnas")
+dim(FUENTE)
+summary(FUENTE)
+
+###Recodificación
+ FUENTE <- within(FUENTE,
+                {
+                  ### Recodificacion de Sexo
+                  Sexo <- gsub("g","GENERAL", Sexo)
+                  Sexo <- gsub("m","HOMBRE", Sexo)
+                  Sexo <- gsub("f","MUJER", Sexo)
+                  
+                  ### Recodificacion de Estado
+                  Estado <- gsub(".*xico.*", "México", Estado)
+                  Estado <- gsub(".*ichoac.*", "Michoacán", Estado)
+                  Estado <- gsub("Nuevo.*", "Nuevo León", Estado)
+                  Estado <- gsub("Quer.*", "Querétaro", Estado)
+                  Estado <- gsub("Yucat.n", "Yucatán", Estado)
+                  Estado <- gsub("Aguasca.*", "Aguascalientes", Estado)
+                  Estado <- gsub(".*Federal", "Distrito Federal", Estado)
+                  Estado <- gsub("Yuc.*", "Yucatán", Estado)
+                  Estado <- gsub("Guanaj.*", "Guanajuato", Estado)
+                  Estado <- gsub(".*orelos", "Morelos", Estado)
+                  Estado <- gsub("San Luis.*", "San Luis Potosí", Estado)
+                  Estado <- gsub(".*dalgo", "Hidalgo", Estado)
+                  Estado <- gsub(".*Roo", "Quintana Roo", Estado)
+                  Estado <- gsub(".*abasco", "Tabasco", Estado)
+                  Estado <- gsub(".*maulipas", "Tamaulipas", Estado)
+                  Estado <- gsub(".*ecas", "Zacatecas", Estado)
+                  Estado <- gsub("Tam.aulipas", "Tamaulipas", Estado)
+                  
+                }
+                )
+
+###Una vez que los datos han sido depurados, hacemos un nuevo archivo
+write.table(FUENTE, file = "./DATOS/PROCESADOS/FUENTE.csv", sep = ",", row.names = FALSE)
+
+```
+
+```{r Organizacion FUENTE}
+###Reacomodo las columnas
+FUENTE <- FUENTE[,c(11, 12, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10)]
+
+###Ordeno la tabla por año
+FUENTE$Año <- ordered (FUENTE$Año)
+head(FUENTE)
+tail(FUENTE)
+
+###Transformación de variables
+FUENTE$Año<- as.factor(FUENTE$Año)
+FUENTE$SSA <- as.numeric(FUENTE$SSA)
+FUENTE$IMSS.ORD <- as.numeric(FUENTE$IMSS.ORD)
+FUENTE$ISSSTE <- as.numeric(FUENTE$ISSSTE)
+FUENTE$IMSS.OP <- as.numeric(FUENTE$IMSS.OP)
+FUENTE$DIF <- as.numeric(FUENTE$DIF)
+FUENTE$PEMEX <- as.numeric(FUENTE$PEMEX )
+FUENTE$SEDENA <- as.numeric(FUENTE$SEDENA)
+FUENTE$SEDEMAR <- as.numeric(FUENTE$SEDEMAR)
+FUENTE$OTRAS<- as.numeric(FUENTE$OTRAS)
+FUENTE$Estado <- factor(FUENTE$Estado)
+
+###Organizo FUENTE con el fin de graficar mas fácilmente agregando algunas columnas
+FUENTE.org <- melt(FUENTE)
+names(FUENTE.org)[4:5] <- c("Institución", "Notificaciones")
+
+###Asi se ve organizada la tabla:
+str(FUENTE.org)
+
+###Sin valores repetidos, es decir, quito el caso General
+FUENTE.org.HM <- subset(FUENTE.org,Sexo %in% c("HOMBRE", "MUJER"))
+```
+
+```{r Calidad de los datos FUENTE}
+sum(is.na(FUENTE)) #Numero Total de Faltantes
+mean(is.na(FUENTE)) #Completitud
+sapply(FUENTE, function(x) {mean(is.na(x))}) #Proporcion de faltantes en cada variable
+sum(duplicated(FUENTE)) #Total de Ducplicados
+mean(duplicated(FUENTE)) #Proporcion de Duplicados
+
+#Prueba de cifras de control
+FUENTE.H <- subset(FUENTE,Sexo %in% "HOMBRE",-c(1,2,3))
+FUENTE.M <- subset(FUENTE,Sexo %in% "MUJER", -c(1,2,3))
+FUENTE.G <- subset(FUENTE,Sexo %in% "GENERAL", -c(1,2,3))
+
+sum(FUENTE.G!=(FUENTE.H+FUENTE.M))
+```
+
+
+#---------GRUPO-----------
+
+```{r Lectura de datos GRUPO}
+###Lecturas de datos GRUPO
+folder.ruta<- "./DATOS/BRUTOS/GRUPO/"
+archivos <- list.files(folder.ruta)
+
+lista.archivos <- list()
+for (archivo in archivos) {
+
+  datos <- read.csv(paste0(folder.ruta, archivo))
+  datos <- datos[-33,-14]
+  lista.archivos[[archivo]] <- datos
+}
+
+GRUPO <- ldply(lista.archivos, data.frame, .progress = "text")
+```
+
+```{r Limpieza de GRUPO}
+###Limpieza de GRUPO
+
+###Agregamos 2 columnas para facilitar la visualizacion
+GRUPO$Año <- substr(GRUPO$.id, 5, 8)
+GRUPO$Sexo <-substr(GRUPO$.id, 3, 3)
+GRUPO$.id <- NULL
+
+###Cambio al título de columnas
+names(GRUPO)[2:12]<- c("menosde1","de1a4", "de5a9", "de10a14", "de15a19", "de20a24", "de25a44", "de45a49", "de50a59", "de60a64", "masde65")                  
+
+str(GRUPO)
+
+sapply(GRUPO, class)
+
+###Estructura de la tabla
+cat("numero de renglones y columnas")
+dim(GRUPO)
+summary(GRUPO)
+
+###Recodificación
+ GRUPO <- within(GRUPO,
+                {
+                  ### Recodificacion de Sexo
+                  Sexo <- gsub("g","GENERAL", Sexo)
+                  Sexo <- gsub("m","HOMBRE", Sexo)
+                  Sexo <- gsub("f","MUJER", Sexo)
+                  
+                  ### Recodificacion de Estado
+                  Estado <- gsub(".*xico", "México", Estado)
+                  Estado <- gsub(".*ichoac.*", "Michoacán", Estado)
+                  Estado <- gsub(".*uevo.*", "Nuevo León", Estado)
+                  Estado <- gsub("Quer.*", "Querétaro", Estado)
+                  Estado <- gsub("Yucat.n", "Yucatán", Estado)
+                  Estado <- gsub("Aguasca.*", "Aguascalientes", Estado)
+                  Estado <- gsub(".*Federal", "Distrito Federal", Estado)
+                  Estado <- gsub("Yuc.*", "Yucatán", Estado)
+                  Estado <- gsub("Guanaj.*", "Guanajuato", Estado)
+                  Estado <- gsub(".*orelos", "Morelos", Estado)
+                  Estado <- gsub("San Luis.*", "San Luis Potosí", Estado)
+                  Estado <- gsub(".*dalgo", "Hidalgo", Estado)
+                  Estado <- gsub(".*Roo", "Quintana Roo", Estado)
+                  Estado <- gsub(".*abasco", "Tabasco", Estado)
+                  Estado <- gsub(".*maulipas", "Tamaulipas", Estado)
+                  Estado <- gsub(".*ecas", "Zacatecas", Estado)
+                  Estado <- gsub("Baj.a California", "Baja California", Estado)
+                  Estado <- gsub("Baj.a California Sur", "Baja California Sur", Estado)
+                  Estado <- gsub("Cam.peche", "Campeche", Estado)
+                  Estado <- gsub("Colim.a", "Colima", Estado)
+                  Estado <- gsub("D.urango", "Durango", Estado)
+                  Estado <- gsub("N.ayarit", "Nayarit", Estado)
+                  Estado <- gsub("T.laxcala", "Tlaxcala", Estado)
+                  Estado <- gsub("Tam.aulipas", "Tamaulipas", Estado)
+                  
+                }
+                )
+
+###Una vez que los datos han sido depurados, hacemos un nuevo archivo
+write.table(GRUPO, file = "./DATOS/PROCESADOS/GRUPO.csv", sep = ",", row.names = FALSE)
+
+```
+
+```{r Organizacion de GRUPO}
+###Reacomodo las columnas
+GRUPO <- GRUPO[,c(14, 15, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13)]
+
+###Ordeno la tabla por año
+GRUPO$Año <- ordered (GRUPO$Año)
+head(GRUPO)
+tail(GRUPO)
+
+###Transformación de variables
+GRUPO$Año<- as.factor(GRUPO$Año)
+GRUPO$Estado<- as.factor(GRUPO$Estado)
+GRUPO$menosde1 <- as.numeric(GRUPO$menosde1)
+GRUPO$de1a4 <- as.numeric(GRUPO$de1a4)
+GRUPO$de5a9 <- as.numeric(GRUPO$de5a9)
+GRUPO$de10a14 <- as.numeric(GRUPO$de10a14)
+GRUPO$de15a19 <- as.numeric(GRUPO$de15a19)
+GRUPO$de20a24 <- as.numeric(GRUPO$de20a24)
+GRUPO$de25a44 <- as.numeric(GRUPO$de25a44)
+GRUPO$de45a49 <- as.numeric(GRUPO$de45a49)
+GRUPO$de50a59 <- as.numeric(GRUPO$de50a59)
+GRUPO$de60a64 <- as.numeric(GRUPO$de60a64)
+GRUPO$masde65 <- as.numeric(GRUPO$masde65)
+GRUPO$Ign. <- as.numeric(GRUPO$Ign.)
+
+###Organizo GRUPO con el fin de graficar mas fácilmente
+GRUPO.org <- melt(GRUPO)
+
+###Asi se ve la tabla organizada
+str(GRUPO.org)
+
+###Sin valores repetidos, es decir, quito el caso General
+GRUPO.org.HM <- subset(GRUPO.org,Sexo %in% c("HOMBRE", "MUJER"))
+```
+
+```{r Calidad de los datos GRUPO}
+sum(is.na(GRUPO)) #Numero Total de Faltantes
+mean(is.na(GRUPO)) #Completitud
+sapply(GRUPO, function(x) {mean(is.na(x))}) #Proporcion de faltantes en cada variable
+sum(duplicated(GRUPO)) #Total de Ducplicados
+mean(duplicated(GRUPO)) #Proporcion de Duplicados
+
+#Prueba de cifras de control
+GRUPO.H <- subset(GRUPO,Sexo %in% "HOMBRE",-c(1,2,3))
+GRUPO.M <- subset(GRUPO,Sexo %in% "MUJER", -c(1,2,3))
+GRUPO.G <- subset(GRUPO,Sexo %in% "GENERAL", -c(1,2,3))
+
+sum(GRUPO.G!=(GRUPO.H+GRUPO.M))
+```
+
+
+#---------MES-----------
+
+```{r Lectura de datos de MES}
+###Lecturas de datos MES
+folder.ruta<- "./DATOS/BRUTOS/MES/"
+archivos <- list.files(folder.ruta)
+
+lista.archivos <- list()
+for (archivo in archivos) {
+
+  datos <- read.csv(paste0(folder.ruta, archivo))
+  if (names(datos)[2]== "Tasa.") {
+    datos <- datos[-33,-3]
+  }
+  datos <- datos[-33,-2]
+  lista.archivos[[archivo]] <- datos
+}
+
+MES <- ldply(lista.archivos, data.frame, .progress = "text")
+
+```
+
+```{r Limpieza de MES}
+##Limpieza de MES
+
+###Agrego dos columnas
+MES$Año <- substr(MES$.id, 5, 8)
+MES$Sexo <-substr(MES$.id, 3, 3)
+MES$.id <- NULL
+
+names(MES)[2:13]<- c("Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre")
+
+str(MES)
+
+sapply(MES, class)
+
+###Estructura de la tabla
+cat("numero de renglones y columnas")
+dim(MES)
+summary(MES)
+
+###Recodificación
+ MES <- within(MES,
+                {
+                  ### Recodificacion de Sexo
+                  Sexo <- gsub("g","GENERAL", Sexo)
+                  Sexo <- gsub("m","HOMBRE", Sexo)
+                  Sexo <- gsub("f","MUJER", Sexo)
+                  
+                  ### Recodificacion de Estado
+                  Estado <- gsub(".*xico", "México", Estado)
+                  Estado <- gsub(".*ichoac.*", "Michoacán", Estado)
+                  Estado <- gsub("Nuevo.*", "Nuevo León", Estado)
+                  Estado <- gsub("Quer.*", "Querétaro", Estado)
+                  Estado <- gsub("Yucat.n", "Yucatán", Estado)
+                  Estado <- gsub("Aguasca.*", "Aguascalientes", Estado)
+                  Estado <- gsub(".*Federal", "Distrito Federal", Estado)
+                  Estado <- gsub("Yuc.*", "Yucatán", Estado)
+                  Estado <- gsub("Guanaj.*", "Guanajuato", Estado)
+                  Estado <- gsub(".*orelos", "Morelos", Estado)
+                  Estado <- gsub("San Luis.*", "San Luis Potosí", Estado)
+                  Estado <- gsub(".*dalgo", "Hidalgo", Estado)
+                  Estado <- gsub(".*Roo", "Quintana Roo", Estado)
+                  Estado <- gsub(".*abasco", "Tabasco", Estado)
+                  Estado <- gsub(".*maulipas", "Tamaulipas", Estado)
+                  Estado <- gsub(".*ecas", "Zacatecas", Estado)
+                   
+                }
+                )
+###Una vez que los datos han sido depurados, hacemos un nuevo archivo
+write.table(MES, file = "./DATOS/PROCESADOS/MES.csv", sep = ",", row.names = FALSE)
+
+```
+
+```{r Organizacion MES}
+###Reacomodo las columnas
+MES <- MES[,c(14, 15, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13)]
+
+###Ordeno la tabla por año
+MES$Año <- ordered (MES$Año)
+head(MES)
+tail(MES)
+
+###Transformación de variables
+MES$Año<- as.factor(MES$Año)
+MES$Enero <- as.numeric(MES$Enero)
+MES$Febrero <- as.numeric(MES$Febrero)
+MES$Marzo <- as.numeric(MES$Marzo)
+MES$Abril <- as.numeric(MES$Abril)
+MES$Mayo <- as.numeric(MES$Mayo)
+MES$Junio <- as.numeric(MES$Junio)
+MES$Julio <- as.numeric(MES$Julio)
+MES$Agosto <- as.numeric(MES$Agosto)
+MES$Septiembre <- as.numeric(MES$Septiembre)
+MES$Octubre <- as.numeric(MES$Octubre)
+MES$Noviembre <- as.numeric(MES$Noviembre)
+MES$Diciembre <- as.numeric(MES$Diciembre)
+MES$Estado <- factor(MES$Estado)
+MES$Sexo <- factor(MES$Sexo)
+
+###Organizo MES con el fin de graficar mas fácilmente
+MES.org <- melt(MES)
+
+###Asi se ve la tabla organizada
+str(MES.org)
+
+###Sin valores repetidos, es decir, quito el caso General
+MES.org.HM <- subset(MES.org,Sexo %in% c("HOMBRE", "MUJER"))
+```
+
+```{r Calidad de los datos MES}
+sum(is.na(MES)) #Numero Total de Faltantes
+mean(is.na(MES)) #Completitud
+sapply(MES, function(x) {mean(is.na(x))}) #Proporcion de faltantes en cada variable
+sum(duplicated(MES)) #Total de Ducplicados
+mean(duplicated(MES)) #Proporcion de Duplicados
+
+#Prueba de cifras de control
+MES.H <- subset(MES,Sexo %in% "HOMBRE",-c(1,2,3))
+MES.M <- subset(MES,Sexo %in% "MUJER", -c(1,2,3))
+MES.G <- subset(MES,Sexo %in% "GENERAL", -c(1,2,3))
+
+sum(MES.G!=(MES.H+MES.M))
+```
+
+#---------GRAFICAS-----------
+
+```{r Gráfica1}
+###El proposito de esta grafica es ver el numero de personas diagnosticadas con diabetes, con el fin de tomar medidas preventivas y de tratamiento
+año1<- subset(FUENTE.org, Año==c(2009, 2010, 2011, 2012, 2013))
+p <- ggplot(año1, aes(Año, Notificaciones)) + geom_point() 
+p + facet_grid(. ~ Institución)
+
+``````
+
+```{r Gráfica2}
+###Como se vio en la tabla anterior, las Instituciones mas importantes fueron la SSA, IMSS.ORD e ISSSTE por lo que haremos un analisis mas profundo de estas por estado
+par(mfrow=c(2,2))
+NotSSA <- subset (FUENTE.org, Institución=="SSA")
+        boxplot(Notificaciones~Estado, data=NotSSA,
+        main="Notificaciones a la SSA",
+        ylab="Total",
+        col="blue",
+        varwidth=TRUE, outline=FALSE) 
+NotIMSS.ORD <-subset (FUENTE.org, Institución=="IMSS.ORD")
+        boxplot(Notificaciones~Estado, data=NotIMSS.ORD,
+        main="Notificaciones a IMSS.ORD",
+        ylab="Total",
+        col="blue",
+        varwidth=TRUE, outline=FALSE) 
+NotISSSTE <-subset (FUENTE.org, Institución=="ISSSTE")
+        boxplot(Notificaciones~Estado, data=NotISSSTE,
+        main="Notificaciones a ISSSTE",
+        ylab="Total",
+        col="blue",
+        varwidth=TRUE, outline=FALSE)
+
+```
+
+```{r Gráfica3}
+###La siguiente grafica nos muestra el numero de casos de hombres y mujeres (por separado) con diabetes. Esto con el fin de saber las medidas que se tomaran para tratar a los pacientes en cada insitución
+sexo<-subset(FUENTE.org, !Sexo=="GENERAL")
+ggplot(sexo, aes(Institución,Notificaciones, fill = Sexo)) + geom_bar(stat = "identity")
+
+```
+
+```{r Gráfica4}
+##Como afecta a hombres y mujeres la diabetes en cada rango de edad
+GRUPO.org.HM <- subset(GRUPO.org,Sexo %in% c("HOMBRE", "MUJER"))
+
+ggplot(GRUPO.org.HM, aes(x=Sexo, y=value))+
+ geom_point(aes(colour = value)) + scale_colour_gradient(low = "orange", high = "red") +
+  facet_wrap(~variable)
+```
+
+```{r Gráfica5}
+##La siguiente grafica es similar a la anterior pero nos muestra como afecta a hombres y mujeres la diabetes a través de los años
+GRUPO.org.HM <- subset(GRUPO.org,Sexo %in% c("HOMBRE", "MUJER"))
+
+ggplot(GRUPO.org.HM, aes(x=Sexo, y=value))+
+ geom_point(aes(colour = value)) + scale_colour_gradient(low = "orange", high = "red") +
+  facet_wrap(~Año)
+```
+
+```{r Gráfica6}
+###En esta grafica trataremos de visualizar como ha cambiado el numero de personas diagnosticadas con diabetes en cada año
+FUENTE.org.V <- subset(FUENTE.org, Notificaciones > 100)
+
+ggplot(FUENTE.org.V, aes(Año)) +
+geom_histogram(fill = "red") +
+facet_wrap(~ Estado, ncol = 4) + 
+  labs(title = "Histogramas de Estados con mas de 100 diagnosticos de diabetes en cada año", 
+     x = "Años", 
+     y = "Frecuencia") + 
+theme_bw()
+```
+
+```{r Gráfica7}
+###Veremos cual de los estados tiene mas diagnosticos
+totnot <- subset(GRUPO.org, Sexo=="GENERAL")
+ggplot(totnot, aes(Estado,value)) + geom_bar(stat = "identity", fill="white", colour="darkgreen") 
+
+```
+
+```{r Gráfica8}
+###Sumaremos todos los grupos de edad por estado para saber cuantos diagnosticados hubo en total cada año
+estados<-levels(totnot$Estado)
+
+suma<-matrix(rep(0,352), nrow=32)
+for (i in 1:32){
+  for (j in 1:11){
+    suma[i,j]<-sum(subset(totnot, Estado == estados[i] & Año == 2002+j, 5))
+  }
+}
+
+titulos <- c("Estados", 2003:2013)
+totales <- as.data.frame(matrix(c(estados, suma), ncol=12,))
+names(totales) <- titulos
+Totales <- melt(totales, 1)
+names(Totales) <- c("Estados", "Año", "valor")
+
+###Queremos ver qué estado tiene menos diagnosticados
+col<-subset(totnot, Estado=="Colima")
+qroo<-subset(totnot, Estado=="Quintana Roo")
+max(col[,5])
+max(qroo[,5])
+###En esta grafica buscaremos analizar el INCREMENTO en cada año de tres estados: el estado con mas numero de casos observados, el DF y el estado con el menor numero de casos. Es evidente que el estado con mas diabeticos fue el Estado de México, y gracias al análisis anterior (pues en la gráfica no era muy claro) pudimos ver que es Colima el que cuenta con el menor número.
+
+totedos <- subset(Totales, Estados == "México" | Estados == "Distrito Federal" | Estados == "Colima")
+
+ggplot(totedos, aes(x=Año, y=valor, group= Estados, colour = Estados)) +
+geom_line() + geom_point() +
+labs(title = "Numero de Diagnosticos por Estado", 
+     x = "Año", 
+     y = "Frecuencia") 
+
+```
+
+#```{r Mapa}
+
+estados.shape <- readShapeSpatial("./DATOS/MEXICO/MEX_adm1.shp")
+ 
+#Convertimos este shapefile a un data.frame de R para poder utilizarlo con ggmap.
+estados.poly <- fortify(estados.shape)
+
+imagen <- get_map(load("./DATOS/MEXICO/MapaMexico.RData"))
+
+#Añado un 1 para ajustar el identificador a las claves del INEGI.
+estados.poly$id2 <- as.numeric(estados.poly$id) + 1
+ 
+#Creo un factor para identificar qué partido gobierna qué estado (vean que utilizo la función recode para indicar qué id's, es decir, qué estados, gobierna cada partido.
+#Por ejemplo, el PAN gobierna los estados 2, 3, 11, 21, 25, 26; así para los otros partidos.
+estados.poly$id3 = estados.poly$id2
+estados.poly$id3 = recode(estados.poly$id3, "c(2,3,11,21,25,26)='PAN'; c(1,4,6,7,8,10,13,14,15,16,18,19,22,23,24,28,29,30,31,32)='PRI'; c(9,12,17,20,27)='PRD'; 5='PVEM'")
+estados.poly$id3 = as.factor(estados.poly$id3)
+
+mapa = ggmap(imagen) + #Esto crea la imagen de México que ya vimos anteriormente.
+geom_polygon(data=estados.poly, aes(x=long, y=lat, group=group), colour="grey", fill="white") + #Crea el relieve de los estados con un contorno gris y un fondo blanco.
+geom_polygon(data=estados.poly, aes(x=long, y=lat, group=group, fill=id3), alpha=0.5) + #Creo un relleno de colores según mi factor id3 (que contiene el nombre de los partidos según el estado correspondiente).
+scale_fill_manual(values=c("#003399","#FFCC33","#CC3300","#009966"), name="Partido") + #Indico que quiero colores de manera manual: azul, amarillo, rojo y verde.
+labs(x="Longitud", y="Latitud") + #El nombre de los ejes.
+ggtitle("Mexico: gobiernos estatales \n (Julio 2013) \n") #El título
+ 
+#Vemos el mapa:
+mapa
+```
+
+#---------INFO SESION-----------
+
+```{r Descripción de la sesion}
+sessionInfo()
+
+```
